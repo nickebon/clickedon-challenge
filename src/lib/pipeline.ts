@@ -31,18 +31,22 @@ export async function generate(input: GenerateInput): Promise<GenerateResult> {
   // The model call can fail transiently (rate limits) or return a truncated
   // stream. Right now a single hiccup takes down the whole run.
   const text = await mockStream(input.behavior, state);
-  extractJson(text);
+extractJson(text);
 
   // Revise until the draft passes review.
   let attempt = 0;
+
+  //Bug - attempt < 50 is too high, should be MAX_REVISIONS
   while (!input.reviewPasses(attempt) && attempt < 50) {
     attempt += 1;
   }
 
-  // Kick off the next stage and return.
-  void input.advanceToNextStage().catch(() => {
-    /* ignored */
-  });
+  // bug 1 resolved: void -> await to catch errors & return status: "error" when advanceToNextStage rejects
+  try {
+    await input.advanceToNextStage();
+  } catch {
+    return { status: "error", attempts: attempt };
+  }
 
   return { status: "ok", attempts: attempt };
 }
