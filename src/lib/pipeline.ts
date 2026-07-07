@@ -30,14 +30,31 @@ export async function generate(input: GenerateInput): Promise<GenerateResult> {
 
   // The model call can fail transiently (rate limits) or return a truncated
   // stream. Right now a single hiccup takes down the whole run.
-  const text = await mockStream(input.behavior, state);
-extractJson(text);
+  let text: string | undefined;
+
+    //bug 2 resolved: retry < 2 to recover from transient errors 
+  for (let retry = 0; retry < 2; retry += 1) {
+    try {
+      const candidate = await mockStream(input.behavior, state);
+      extractJson(candidate);
+      text = candidate;
+      break;
+    } catch {
+      if (retry === 1) {
+        throw new Error("Unable to extract JSON from model response");
+      }
+    }
+  }
+
+  if (text === undefined) {
+    throw new Error("Unable to extract JSON from model response");
+  }
 
   // Revise until the draft passes review.
   let attempt = 0;
 
   //Bug - attempt < 50 is too high, should be MAX_REVISIONS
-  while (!input.reviewPasses(attempt) && attempt < 50) {
+  while (!input.reviewPasses(attempt) && attempt < MAX_REVISIONS) {
     attempt += 1;
   }
 
