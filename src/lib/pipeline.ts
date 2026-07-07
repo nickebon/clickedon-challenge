@@ -32,15 +32,14 @@ export async function generate(input: GenerateInput): Promise<GenerateResult> {
   // stream. Right now a single hiccup takes down the whole run.
   let text: string | undefined;
 
-    //bug 2 resolved: retry < 2 to recover from transient errors 
-  for (let retry = 0; retry < 2; retry += 1) {
+  for (let retry = 0; retry < MAX_REVISIONS; retry += 1) {
     try {
       const candidate = await mockStream(input.behavior, state);
       extractJson(candidate);
       text = candidate;
       break;
     } catch {
-      if (retry === 1) {
+      if (retry === MAX_REVISIONS - 1) {
         throw new Error("Unable to extract JSON from model response");
       }
     }
@@ -53,12 +52,14 @@ export async function generate(input: GenerateInput): Promise<GenerateResult> {
   // Revise until the draft passes review.
   let attempt = 0;
 
-  //Bug - attempt < 50 is too high, should be MAX_REVISIONS
   while (!input.reviewPasses(attempt) && attempt < MAX_REVISIONS) {
     attempt += 1;
   }
 
-  // bug 1 resolved: void -> await to catch errors & return status: "error" when advanceToNextStage rejects
+  if (!input.reviewPasses(attempt)) {
+    return { status: "error", attempts: attempt };
+  }
+
   try {
     await input.advanceToNextStage();
   } catch {
